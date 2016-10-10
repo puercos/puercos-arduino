@@ -1,5 +1,8 @@
 #include <Servo.h>
 
+#include <SPI.h>
+#include <Ethernet.h>
+
 /**************************************************/
 
 /*inicio variables para el servo motor*/
@@ -11,8 +14,8 @@ Servo miServo;
 const int servoPin = 9;
 
 //angulo que toma el motor
-//90° -> puerta cerrada
-//0°  -> puerta abierta
+//90∞ -> puerta cerrada
+//0∞  -> puerta abierta
 int angulo;
 
 /*fin variables para el servo motor*/
@@ -52,9 +55,9 @@ int palmadasTotales;
 /*inicio variables para las luces de led*/
 
 //pines para cada led
-const int ledRojoPin = 11;
-const int ledAmarilloPin = 12;
-const int ledVerdePin = 13;
+const int ledRojoPin = 5;
+const int ledAmarilloPin = 6;
+const int ledVerdePin = 7;
 
 /*fin variables para las luces de led*/
 
@@ -73,6 +76,16 @@ int estadoSwitch;
 /**************************************************/
 
 
+/**************************************************/
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };   //Direccion Fisica MAC
+byte ip[] = { 192, 168, 0, 50 };                       // IP Local que usted debe configurar 
+byte gateway[] = { 192, 168, 0, 1 };                   // Puerta de enlace
+byte subnet[] = { 255, 255, 255, 0 };                  //Mascara de Sub Red
+EthernetServer server(80);                             //Se usa el puerto 80 del servidor     
+String readString;
+/**************************************************/
+
+
 void setup() {
 
   //inicializo el serial por si se quiere imprimir algun valor o mensaje por el serial monitor (que seria como una consola)
@@ -88,6 +101,13 @@ void setup() {
 
   //lee el valor del estado del reed switch para saber si el sistema arranca con la puerta cerrada (que seria lo mas comun) o abierta.
   estadoSwitch = digitalRead(pinSwitch);
+
+
+  Ethernet.begin(mac, ip, gateway, subnet); // Inicializa la conexion Ethernet y el servidor
+  server.begin();
+  Serial.print("El Servidor es: ");
+  Serial.println(Ethernet.localIP());    // Imprime la direccion IP Local
+
 
   if (estadoSwitch == LOW) {        //puerta CERRADA
 
@@ -110,6 +130,50 @@ void setup() {
 
 
 void loop() {
+
+  // Crea una conexion Cliente
+  EthernetClient client = server.available();
+  if (client) {
+    while (client.connected()) {   
+      if (client.available()) {
+        char c = client.read();
+     
+        //Lee caracter por caracter HTTP
+        if (readString.length() < 100) {
+          //Almacena los caracteres a un String
+          readString += c;
+          
+         }
+
+         // si el requerimiento HTTP fue finalizado
+         if (c == '\n') {          
+           Serial.println(readString); //Imprime en el monitor serial
+     
+           client.println("HTTP/1.1 200 OK");           //envia una nueva pagina en codigo HTML
+           client.println("Content-Type: text/html");
+           client.println();     
+   
+           delay(1);
+           //detiene el cliente servidor
+           client.stop();
+           
+        
+           if (readString.indexOf("?dooropen") >0){
+               abrirPuerta();
+           }
+           if (readString.indexOf("?doorclose") >0){
+               cerrarPuerta();
+           }
+           
+            // Limpia el String(Cadena de Caracteres para una nueva lectura
+            readString="";  
+           
+         }
+       }
+    }
+  }
+
+
 
   //constantemente leemos el estado del reed switch ya que la deteccion de sonido para abrir la puerta solo deberia funcionar cuando esta este cerrada
   estadoSwitch = digitalRead(pinSwitch);
