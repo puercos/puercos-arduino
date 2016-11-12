@@ -34,7 +34,9 @@ Cuando el sistema detecta la cantidad correcta de sonidos (y por supuesto que se
 
 ## Fotos del sistema embebido
 
-
+![Photo 001](./gh-assets/photo001.jpg)
+![Photo 002](./gh-assets/photo002.jpg)
+![Photo 003](./gh-assets/photo003.jpg)
 
 ## Demostración
 
