@@ -3,11 +3,6 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
-#include <SD.h>
-
-//Archivo que contendra los tiempos para el codigo de sonido
-File myFile;
-
 /**************************************************/
 
 /*inicio variables para el servo motor*/
@@ -19,8 +14,8 @@ Servo miServo;
 const int servoPin = 9;
 
 //angulo que toma el motor
-//100° -> puerta cerrada
-//0°  -> puerta abierta
+//90∞ -> puerta cerrada
+//0∞  -> puerta abierta
 int angulo;
 
 /*fin variables para el servo motor*/
@@ -36,7 +31,7 @@ int volumen;
 int cantPalmadas;
 
 //vector con los tiempos entre palmadas
-int tiemposEntrePalmadas[10];
+int tiemposEntrePalmadas[5];
 
 //indice para moverme en el vector
 int i;
@@ -84,16 +79,12 @@ int estadoSwitch;
 /**************************************************/
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };   //Direccion Fisica MAC
 byte ip[] = { 192, 168, 0, 50 };                       // IP Local que usted debe configurar 
-//byte gateway[] = { 192, 168, 0, 1 };                   // Puerta de enlace
-//byte subnet[] = { 255, 255, 255, 0 };                  //Mascara de Sub Red
+byte gateway[] = { 192, 168, 0, 1 };                   // Puerta de enlace
+byte subnet[] = { 255, 255, 255, 0 };                  //Mascara de Sub Red
 EthernetServer server(80);                             //Se usa el puerto 80 del servidor     
-EthernetClient client;
-String readerString;
-String palabraClave;
+String readString;
 /**************************************************/
 
-//0=cerrada , 1=abierta
-int state;
 
 void setup() {
 
@@ -111,26 +102,15 @@ void setup() {
   //lee el valor del estado del reed switch para saber si el sistema arranca con la puerta cerrada (que seria lo mas comun) o abierta.
   estadoSwitch = digitalRead(pinSwitch);
 
-  //al estar el modulo de la SD en el shield, este necesita tener libre el pin 4
-  if (!SD.begin(4)) {
-    Serial.println("fallo la inicializacion de la SD");
-    while(1){
-      digitalWrite(ledRojoPin, HIGH);
-      delay(1000);
-      digitalWrite(ledRojoPin, LOW);
-      delay(1000);
-    }
-  }
 
-//  Ethernet.begin(mac, ip, gateway, subnet); // Inicializa la conexion Ethernet y el servidor
-  Ethernet.begin(mac, ip);
+  Ethernet.begin(mac, ip, gateway, subnet); // Inicializa la conexion Ethernet y el servidor
   server.begin();
-//  Serial.print("El Servidor es: ");
-//  Serial.println(Ethernet.localIP());    // Imprime la direccion IP Local
+  Serial.print("El Servidor es: ");
+  Serial.println(Ethernet.localIP());    // Imprime la direccion IP Local
 
 
   if (estadoSwitch == LOW) {        //puerta CERRADA
-    state = 0;
+
     inicializarVariables();
 
     cerrarPuerta();
@@ -139,7 +119,7 @@ void setup() {
 
 
   }else{                            //puerta ABIERTA
-    state = 1;
+    
     abrirPuerta();
 
     //no inicializo las variables, ya que esto lo voy a hacer cuando la puerta se cierre
@@ -152,79 +132,41 @@ void setup() {
 void loop() {
 
   // Crea una conexion Cliente
-  client = server.available();
-  
+  EthernetClient client = server.available();
   if (client) {
-//    Serial.println("new client");
     while (client.connected()) {   
       if (client.available()) {
         char c = client.read();
      
         //Lee caracter por caracter HTTP
-        if (readerString.length() < 100) {
+        if (readString.length() < 100) {
           //Almacena los caracteres a un String
-          readerString += c;
+          readString += c;
           
          }
 
          // si el requerimiento HTTP fue finalizado
          if (c == '\n') {          
-//           Serial.print("requerimiento http: "); 
-//           Serial.println(readerString);
-
-           palabraClave = readerString.substring(6,14);
-//           Serial.print("palabra clave: ");
-//           Serial.println(palabraClave);
-
-           //pasamos el string a char *
-           char * cstr = new char [palabraClave.length()+1];
-           strcpy (cstr, palabraClave.c_str());
-
-           //envia una nueva pagina en codigo HTML
-           client.println("HTTP/1.1 200 OK");           
+           Serial.println(readString); //Imprime en el monitor serial
+     
+           client.println("HTTP/1.1 200 OK");           //envia una nueva pagina en codigo HTML
            client.println("Content-Type: text/html");
            client.println();     
    
-           delay(50);
+           delay(1);
            //detiene el cliente servidor
            client.stop();
            
-           if (strcmp (cstr,"dooropen") == 0){
-//               Serial.println("abrir puerta");
-               digitalWrite(ledAmarilloPin, LOW);
-               digitalWrite(ledVerdePin, HIGH);
-
+        
+           if (readString.indexOf("?dooropen") >0){
                abrirPuerta();
            }
-           if (strcmp (cstr,"doorclos") == 0){
-//               Serial.println("cerrar puerta");
-               digitalWrite(ledVerdePin, LOW);
-               inicializarVariables();
+           if (readString.indexOf("?doorclose") >0){
                cerrarPuerta();
-               digitalWrite(ledAmarilloPin, HIGH);
            }
            
-           if (strcmp (cstr,"password") == 0){
-//               Serial.println("cambiar contraseña");
-               String loQueLeo = readerString.substring(15,readerString.lastIndexOf("x"));
-               grabarCodigo(loQueLeo);
-               delay(1000);
-               inicializarVariables();
-               for(int i = 0; i < 3; i++){
-                 digitalWrite(ledRojoPin, HIGH);
-                 digitalWrite(ledAmarilloPin, HIGH);
-                 digitalWrite(ledVerdePin, HIGH);
-                 delay(1000);
-                 digitalWrite(ledRojoPin, LOW);
-                 digitalWrite(ledAmarilloPin, LOW);
-                 digitalWrite(ledVerdePin, LOW);
-                 delay(1000);
-               }
-               digitalWrite(ledAmarilloPin, HIGH);
-           } 
-                     
-           // Limpia el String(Cadena de Caracteres para una nueva lectura
-           readerString="";  
+            // Limpia el String(Cadena de Caracteres para una nueva lectura
+            readString="";  
            
          }
        }
@@ -237,19 +179,18 @@ void loop() {
   estadoSwitch = digitalRead(pinSwitch);
 
 
-  if (estadoSwitch == LOW && state==0) {        //puerta CERRADA
+  if (estadoSwitch == LOW) {        //puerta CERRADA
 
     //leo el nivel de sonido detectado analogicamente por la entrada A0
     volumen = analogRead(A0);
   
-    //solo para la primera palmada
     if (volumen > 1000 && cantPalmadas == 0){
 
       //Serial.println(volumen);
       digitalWrite(ledAmarilloPin, LOW);
       cantPalmadas++;
       volumen = 0;
-      delay(100);
+      delay(50);
       digitalWrite(ledAmarilloPin, HIGH);
       tiempoUltimaPalmada = millis();
       
@@ -261,13 +202,12 @@ void loop() {
   
     if ( volumen > 1000 && cantPalmadas > 0 ){
 
-      //validacion del tiempo entre los sonidos, que sea igual al de la correspondiente posicion en el vector, mas menos una tolerancia
       if ( ( tiempoActualEntrePalmada > tiemposEntrePalmadas[i] - tolerancia ) && ( tiempoActualEntrePalmada < tiemposEntrePalmadas[i] + tolerancia ) ){
         
         //Serial.println(volumen);
         digitalWrite(ledAmarilloPin, LOW);
         cantPalmadas++;
-        delay(100);
+        delay(50);
         digitalWrite(ledAmarilloPin, HIGH);
         i++;
         tiempoUltimaPalmada = millis();
@@ -311,95 +251,50 @@ void loop() {
     }
   
   } else {                            //puerta ABIERTA
-    if (estadoSwitch == HIGH ){
-      digitalWrite(ledAmarilloPin, LOW);
-      digitalWrite(ledVerdePin, HIGH);
 
-      //mientras la puerta este abierta me quedo loopeando, hasta que la puerta se cierra
-      while(estadoSwitch == HIGH){
-        estadoSwitch = digitalRead(pinSwitch);
-      }
+    digitalWrite(ledAmarilloPin, LOW);
+    digitalWrite(ledVerdePin, HIGH);
 
-      digitalWrite(ledVerdePin, LOW);
-    
-      inicializarVariables();
-      cerrarPuerta();
-      digitalWrite(ledAmarilloPin, HIGH);
+    //mientras la puerta este abierta me quedo loopeando, hasta que la puerta se cierra
+    while(estadoSwitch == HIGH){
+      estadoSwitch = digitalRead(pinSwitch);
     }
+
+    digitalWrite(ledVerdePin, LOW);
+    
+    inicializarVariables();
+    cerrarPuerta();
+    digitalWrite(ledAmarilloPin, HIGH);
   
   }
 
 }
 
 void inicializarVariables(){
-  
   volumen = 0;
   cantPalmadas = 0;
-
-
-  myFile = SD.open("codigo.txt", FILE_READ);
-  delay(100);
-
-  if (myFile) {
-
-    char inputString [10];
-    char inputChar;
-    int stringIndex = 0; // String stringIndexing int;
-    i=0;
-    
-    // read from the file until there's nothing else in it:
-    while (myFile.available()) {
-
-        //leo caracteres
-        inputChar = myFile.read();
-
-        if (inputChar != ','){
-          inputString[stringIndex] = inputChar; // Store it
-          stringIndex++; // Increment where to write next
-        }else{
-          Serial.print("test: "); // shows that the program is cycling, for debugging only
-          tiemposEntrePalmadas[i] = atoi(inputString);
-          Serial.println(tiemposEntrePalmadas[i]);
-          i++;
-          delay (50);
-          stringIndex = 0; // clear the value for the next cycle
-        }
-              
-    }
-    
-    // close the file:
-    myFile.close();
-    
-  } else {
-    
-    Serial.println("error al abrir codigo.txt");
-    while(1){
-      digitalWrite(ledRojoPin, HIGH);
-      delay(1000);
-      digitalWrite(ledRojoPin, LOW);
-      delay(1000);
-    }
-    
-  }
   
-
-  
-  tolerancia = 300;
+  tiemposEntrePalmadas[0] = 400;
+  tiemposEntrePalmadas[1] = 100;
+  tiemposEntrePalmadas[2] = 400;
+  tiemposEntrePalmadas[3] = 400;
+  tiemposEntrePalmadas[4] = 100;
+  i = 0;
+  tolerancia = 150;
   tiempoUltimaPalmada = 0;
   tiempoActualEntrePalmada = 0;
-  palmadasTotales = i+1;
-  i = 0;
-  
-Serial.print("Cantidad de palmadas a hacer: ");
-Serial.println(palmadasTotales);
+  palmadasTotales = ( sizeof(tiemposEntrePalmadas)/sizeof(int) ) + 1;
+
+//Serial.print("Cantidad de palmadas a hacer: ");
+//Serial.println(palmadasTotales);
 
 }
 
 void abrirPuerta(){
-  state = 1;
+
   miServo.attach(servoPin);
 
-  for(angulo = 100; angulo  >= 0; angulo  -= 1){
+  for(angulo = 96; angulo  >= 0; angulo  -= 1){
     miServo.write(angulo);
     delay(5);
   }
@@ -411,10 +306,10 @@ void abrirPuerta(){
 }
 
 void cerrarPuerta(){
-  state = 0;
+
   miServo.attach(servoPin);
   
-  for(angulo  = 0; angulo  <=100; angulo  +=1 ){
+  for(angulo  = 0; angulo  <=96; angulo  +=1 ){
     miServo.write( angulo );
     delay(5);
   }
@@ -425,38 +320,3 @@ void cerrarPuerta(){
   
 }
 
-void grabarCodigo(String cadena){
-
-  if (SD.exists("codigo.txt")) {
-    SD.remove("codigo.txt");
-    Serial.println("archivo borrado.");
-  }
-
-
-  myFile = SD.open("codigo.txt", FILE_WRITE);
-  
-  Serial.print("la cadena a guardar es esta: ");
-  Serial.println(cadena);
-
-  if (myFile) {
-    
-    //tendria que escribir el substring tal cual como viene y concatenarle una coma al final
-    myFile.print(cadena);
-    myFile.println(",");
-    
-    // close the file:
-    myFile.close();
-
-  } else {
-    
-    Serial.println("errooooooor al abrir codigo.txt");
-    while(1){
-      digitalWrite(ledRojoPin, HIGH);
-      delay(1000);
-      digitalWrite(ledRojoPin, LOW);
-      delay(1000);
-    }
-    
-  }
-  
-}
